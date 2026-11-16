@@ -41,12 +41,13 @@ td.k{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.06em}
 .hide{display:none}
 .err{color:var(--bad);margin-top:8px}
 @media (prefers-reduced-motion:no-preference){.panel{animation:in .35s ease both}@keyframes in{from{opacity:0;transform:translateY(6px)}}}
+details.ch{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin:10px 0;padding:10px 16px}details.ch summary{cursor:pointer;font-weight:600;color:var(--acc)}canvas{width:100%;height:auto;display:block;margin-top:10px;border-radius:8px}
 </style>
 </head>
 <body>
 <header>
   <h1>RSP <span>Data Expedition</span></h1>
-  <nav><button id="tS" class="on">Student</button><button id="tT">Teacher</button></nav>
+  <nav><button id="tS" class="on">Student</button><button id="tT">Teacher</button><button id="tC">Charts</button></nav>
 </header>
 <main>
 <section id="pS">
@@ -63,14 +64,17 @@ td.k{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.06em}
 
 <section id="pT" class="hide">
   <h2>Teacher options</h2>
+  <div class="panel" id="gT"><label for="pwT">Teacher password</label><br><input id="pwT" type="password"> <button class="go" id="uT">Unlock</button><div id="eT" class="err"></div></div>
+  <div id="cT" class="hide">
   <p class="mute">Paste one student name per line. Each student receives a unique four-word key that works as the seed for that student's data.</p>
   <div class="panel">
     <textarea id="names" placeholder="Ada Lovelace&#10;Grace Hopper&#10;Alan Turing"></textarea><br>
     <button class="go" id="gen">Generate keys</button>
     <button class="go alt" id="pdf">Download cut-out PDF</button>
     <button class="go alt" id="csv">Download roster CSV</button>
+    <button class="go alt" id="alist">Show answer list for roster</button>
     <div id="terr" class="err"></div>
-    <div id="roster"></div>
+    <div id="roster"></div><div id="alout"></div>
   </div>
   <div class="panel">
     <h3>Answer key lookup</h3>
@@ -79,6 +83,17 @@ td.k{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.06em}
     <button class="go" id="alook">Show answers</button>
     <div id="aout"></div>
   </div>
+</div>
+</section>
+
+<section id="pC" class="hide">
+  <h2>Chart viewer</h2>
+  <p class="mute">View the graphs for any student's mission key. Each chart opens only when clicked.</p>
+  <div class="panel" id="gC"><label for="pwC">Password</label><br><input id="pwC" type="password"> <button class="go" id="uC">Unlock</button><div id="eC" class="err"></div></div>
+  <div id="cC" class="hide">
+    <div class="panel"><input id="ckey" class="key" placeholder="GRAYSKYBLUEAPPLE" autocomplete="off" spellcheck="false"> <button class="go" id="cgo">Show charts</button><div id="cerr" class="err"></div></div>
+    <div id="charts"></div>
+  </div>
 </section>
 </main>
 
@@ -86,7 +101,7 @@ td.k{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.06em}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 const WORDS="RED BLUE GRAY GREEN GOLD PINK TEAL AMBER IVORY CORAL SKY MOON STAR SUN RAIN SNOW WIND FIRE ICE LAVA APPLE PEAR PLUM LEMON MANGO GRAPE BERRY MELON TIGER EAGLE OTTER PANDA ROBIN LLAMA SHARK WHALE MAPLE CEDAR PINE FERN MOSS ROCK SAND HILL LAKE RIVER CLOUD STORM COMET ORBIT ROVER LASER PIXEL ROBOT CAMEL BREAD CANDY DRUM FLUTE PIANO TRAIN KITE CHEESE SPOON".split(" ");
-const N=101;
+const N=101,PW_TEACH="rover7",PW_VIEW="veyra",COL=["#7be0c3","#ff9f6b","#9db4ff","#f4d35e","#ff7a8a"];
 const norm=s=>s.toUpperCase().replace(/[^A-Z]/g,'');
 function valid(s,n=4){if(n==0)return s==='';return WORDS.some(w=>s.startsWith(w)&&valid(s.slice(w.length),n-1))}
 function hash(s){let x=2166136261;for(const c of s){x^=c.charCodeAt(0);x=Math.imul(x,16777619)}return x>>>0}
@@ -135,34 +150,43 @@ function build(key){
   const z=s2.indexOf(0), back=s2.findIndex((v,i)=>i>z&&v!==0);
   // Sheet 3 (Q = sheet 1 data, R = sheet 2 data)
   const f3=R(3),ts=ri(f3,5,26);
-  // Sheet 4
-  const ord=shuffle(["A","B","C"],R(4)),t4=ord.map((l,i)=>gen(l,R(40+i)));
-  // Sheet 5
-  const f5=R(5),pickABC=["A","B","C"][ri(f5,0,2)];
-  const rest=shuffle(["D","E","F","G","H","I","K"],f5).slice(0,3);
-  const ord5=shuffle([pickABC,...rest],f5),t5=ord5.map((l,i)=>gen(l,R(50+i)));
-  // Sheet 6 (optional): rover trajectory
-  const f6=R(6),WP=[];for(let i=0;i<6;i++)WP.push([ri(f6,8,92),ri(f6,8,92)]);
-  const P=[WP[0],...WP,WP[5]],rx=[],ry=[];
+  const ABC=["A","B","C"],ALL=Object.keys(SIT),col=(h,a)=>[h,...a],ln=(n,y,x=TIME)=>({n,x,y});
+  // Sheet 4: different cooling rates
+  const f4=R(4),Ta4=ri(f4,10,18),rr=2.2+f4()*2.3,ts4=ri(f4,15,55),kb=.01+f4()*.02,ka=kb+Math.log(rr)/ts4,dX=ri(f4,38,52);
+  const sx=TIME.map(t=>r1(cool(t,Ta4+dX,Ta4,ka))),sy=TIME.map(t=>r1(cool(t,Ta4+dX/rr,Ta4,kb))),cross=TIME.findIndex(t=>sy[t]>sx[t]);
+  // Sheet 5: trials; Sheet 6: four datasets with a guaranteed normal one; Sheet 7: everything else
+  const ord=shuffle(ABC,R(5)),t5=ord.map((l,i)=>gen(l,R(50+i)));
+  const f6=R(6),ab=ABC[ri(f6,0,2)],ord6=shuffle([ab,"D",...shuffle(["E","F","G","H","I","K"],f6).slice(0,2)],f6),t6=ord6.map((l,i)=>gen(l,R(60+i)));
+  const ord7=shuffle(ALL.filter(l=>!ord6.includes(l)),R(7)),t7=ord7.map((l,i)=>gen(l,R(70+i)));
+  // Sheet 8: rover path through constant zones; Sheet 9: constant map
+  const ZN=[["Crystal Flats",15,35,55,75],["Ember Ridge",60,80,15,35]],f8=R(8),rp=()=>[ri(f8,8,92),ri(f8,8,92)],inr=z=>[ri(f8,z[1]+3,z[2]-3),ri(f8,z[3]+3,z[4]-3)];
+  const WP=[rp(),inr(ZN[0]),rp(),inr(ZN[1]),rp(),rp()],P=[WP[0],...WP,WP[5]],rx=[],ry=[];
   TIME.forEach(t=>{const g=t/100*5,i=Math.min(4,Math.floor(g)),u=g-i;
     const q=a=>{const[p0,p1,p2,p3]=[P[i],P[i+1],P[i+2],P[i+3]].map(p=>p[a]);return .5*(2*p1+(-p0+p2)*u+(2*p0-5*p1+4*p2-p3)*u*u+(-p0+3*p1-3*p2+p3)*u*u*u)};
     rx.push(r1(Math.min(100,Math.max(0,q(0)))));ry.push(r1(Math.min(100,Math.max(0,q(1)))))});
-  const za=ri(f6,25,55),zb=ri(f6,60,90),clampZ=v=>Math.min(84,Math.max(0,Math.round(v-8)));
-  const Z=[["Crystal Flats",za],["Ember Ridge",zb]].map(([n,t])=>{const x0=clampZ(rx[t]),y0=clampZ(ry[t]);return{n,x0,x1:x0+16,y0,y1:y0+16}});
-  const inZ=(z,i)=>rx[i]>=z.x0&&rx[i]<=z.x1&&ry[i]>=z.y0&&ry[i]<=z.y1;
-  const tq=ri(f6,15,85);
-  const col=(h,a)=>[h,...a];
+  const inZ=(z,i)=>rx[i]>=z[1]&&rx[i]<=z[2]&&ry[i]>=z[3]&&ry[i]<=z[4],tq=ri(f8,15,85);
+  const rect=z=>[[z[1],z[2],z[2],z[1],z[1]],[z[3],z[3],z[4],z[4],z[3]]],brd=[[0,100,100,0,0],[0,0,100,100,0]];
+  const mapC=[["Map Border X",brd[0]],["Map Border Y",brd[1]],...ZN.flatMap(z=>{const[a,b]=rect(z);return[[z[0]+" X",a],[z[0]+" Y",b]]})];
+  // Sheet 10: huge noisy data with -999 sentinels
+  const f10=R(10),T10=[...Array(5000).keys()],r2=x=>Math.round(x*100)/100;
+  const b10=[0,1,2].map(()=>{const m=ri(f10,15,35),a=ri(f10,3,8),p=ri(f10,600,1500),ph=f10()*6.28,sd=.4+f10()*.8,pr=.02+f10()*.03;
+    return T10.map(t=>f10()<pr?-999:r2(m+a*Math.sin(2*Math.PI*t/p+ph)+nz(f10,sd)))});
+  const ok=a=>a.filter(v=>v!==-999),mean=a=>{const o=ok(a);return r1(o.reduce((x,y)=>x+y,0)/o.length)};
   const sheets=[
    {name:"Sheet 1",rows:zip([col("Time (s)",TIME),col("Temperature (C)",s1)])},
    {name:"Sheet 2",rows:zip([col("Time (s)",TIME),col("Temperature (C)",s2)])},
    {name:"Sheet 3",rows:zip([col("Time (s)",TIME),col("Temperature Series Q",s1),col("Temperature Series R",s2)])},
-   {name:"Sheet 4",rows:zip([col("Time (s)",TIME),...t4.map((d,i)=>col("Trial "+(i+1),d))])},
-   {name:"Sheet 5",rows:zip([col("Time (s)",TIME),...t5.map((d,i)=>col("Dataset "+(i+1),d))])},
-   {name:"Sheet 6 (optional)",rows:zip([col("Time (s)",TIME),col("X (m)",rx),col("Y (m)",ry)])}
+   {name:"Sheet 4",rows:zip([col("Time (s)",TIME),col("Sample X (C)",sx),col("Sample Y (C)",sy)])},
+   {name:"Sheet 5",rows:zip([col("Time (s)",TIME),...t5.map((d,i)=>col("Trial "+(i+1),d))])},
+   {name:"Sheet 6",rows:zip([col("Time (s)",TIME),...t6.map((d,i)=>col("Dataset "+(i+1),d))])},
+   {name:"Sheet 7",rows:zip([col("Time (s)",TIME),...t7.map((d,i)=>col("Dataset "+(i+1),d))])},
+   {name:"Sheet 8 (optional)",rows:zip([col("Time (s)",TIME),col("X (m)",rx),col("Y (m)",ry)])},
+   {name:"Sheet 9 (optional)",rows:zip(mapC.map(c=>col(c[0],c[1])))},
+   {name:"Sheet 10",rows:zip([col("Time (s)",T10),...b10.map((d,i)=>col("Temperature Series "+(i+1),d))])}
   ];
-  const num=(label,ans)=>({type:'num',label,ans});
-  const sel=(label,ans,opts)=>({type:'sel',label,ans,opts});
-  const ABC=["A","B","C"],ALL=Object.keys(SIT);
+  const num=(label,ans)=>({type:'num',label,ans}),OP=a=>a.map(l=>[l,`${l}: ${SIT[l][0]}`]);
+  const sel=(label,ans,opts)=>({type:'sel',label,ans,opts:typeof opts[0]=='string'?OP(opts):opts,ansLabel:SIT[ans]?`${ans} - ${SIT[ans][0]}`:ans});
+  const opt=a=>a.map(q=>({...q,opt:true}));
   const qs=[
    {title:"Sheet 1: Landing log",story:"RSP Unit-1 dipped its sensor into the first Veyran sample pool and logged every second for 100 seconds.",
     q:[num("What temperature (°C) does the RSP log at t = 10 s?",s1[10]),num("At what second does the temperature first reach 12.0 °C or lower?",s1.findIndex(v=>v<=12))]},
@@ -170,24 +194,44 @@ function build(key){
     q:[num("At what second does the log first read 0 °C?",z),num("At what second does the sensor start logging real data again?",back)]},
    {title:"Sheet 3: Twin probes",story:"The RSP's logs from the first two pools are now side by side on one shared time column. Series Q is the first pool's log and Series R is the second pool's. Build one chart with two lines to compare them.",
     q:[num(`What is Temperature Series Q at t = ${ts} s?`,s1[ts]),num(`What is Temperature Series R at t = ${ts} s?`,s2[ts]),num("What is Temperature Series R at t = 45 s?",s2[45])]},
-   {title:"Sheet 4: Three expeditions",story:"The RSP ran three trials on three different pools, and each trial suffered one of the situations below. Match each trial to its situation.",legend:ABC,
+   {title:"Sheet 4: Racing pools",story:"The RSP warmed two samples to different temperatures and logged both as they cooled. They share a time column but cool at different rates, so chart them together.",
+    q:[num("At what second is Sample Y first warmer than Sample X?",cross),sel("Which sample cools faster?","X",[["X","Sample X"],["Y","Sample Y"]])]},
+   {title:"Sheet 5: Three expeditions",story:"The RSP ran three trials on three different pools, and each trial suffered one of the situations below. Match each trial to its situation.",legend:ABC,
     q:ord.map((l,i)=>sel(`Trial ${i+1} matches situation`,l,ABC))},
-   {title:"Sheet 5: Mystery pools",story:"The RSP sent back four datasets from the far side of Veyra-7. Each one matches a situation from the full field guide below.",legend:ALL,
-    q:ord5.map((l,i)=>sel(`Dataset ${i+1} matches situation`,l,ALL))},
-   {title:"Sheet 6 (optional): Rover trace",story:`The RSP rides a rover across Veyra-7 and logs its position every second as X and Y in meters (top-down view). The mission map has two zones: ${Z.map(z=>`${z.n} (x from ${z.x0} to ${z.x1}, y from ${z.y0} to ${z.y1})`).join(' and ')}. A zone includes its boundary. Plot Y against X as a scatter chart to see the path, then use the time column to decide where the rover was and when.`,
-    q:[num(`At t = ${tq} s, what is the rover's X coordinate (m)?`,rx[tq]),num(`At t = ${tq} s, what is the rover's Y coordinate (m)?`,ry[tq]),
-       num(`For how many of the logged seconds is the rover inside ${Z[0].n}?`,TIME.filter(i=>inZ(Z[0],i)).length),
-       num(`At what second does the rover first enter ${Z[1].n}?`,TIME.findIndex(i=>inZ(Z[1],i)))].map(q=>({...q,opt:true}))}
+   {title:"Sheet 6: Mystery pools",story:"The RSP sent back four datasets from the far side of Veyra-7. Each one matches a situation from the full field guide below.",legend:ALL,
+    q:ord6.map((l,i)=>sel(`Dataset ${i+1} matches situation`,l,ALL))},
+   {title:"Sheet 7: The rest of the field guide",story:"Six more datasets arrived from the RSP. They show the situations that did not appear on Sheet 6. Match each one.",legend:ALL,
+    q:ord7.map((l,i)=>sel(`Dataset ${i+1} matches situation`,l,ALL))},
+   {title:"Sheet 8 (optional): Rover trace",story:`The RSP rides a rover across Veyra-7 and logs its position every second as X and Y in meters (top-down view). Plot Y against X as a scatter chart to see the path, then add the map from Sheet 9 underneath to decide where the rover was and when. A zone includes its boundary.`,
+    q:opt([num(`At t = ${tq} s, what is the rover's X coordinate (m)?`,rx[tq]),num(`At t = ${tq} s, what is the rover's Y coordinate (m)?`,ry[tq]),
+       num(`For how many of the logged seconds is the rover inside ${ZN[0][0]}?`,TIME.filter(i=>inZ(ZN[0],i)).length),
+       num(`At what second does the rover first enter ${ZN[1][0]}?`,TIME.findIndex(i=>inZ(ZN[1],i)))])},
+   {title:"Sheet 9 (optional): Mission map",story:"The map of Veyra-7 is the same for every analyst. Each zone is stored as the corners of a closed rectangle. Copy these columns next to the rover columns on Sheet 8 and add them to the scatter chart as extra series so the rover path sits on top of the map.",q:[]},
+   {title:"Sheet 10: Long-range survey",story:"The RSP logged three probes for a very long expedition. Whenever a reading failed, the log stored -999 instead of a temperature. Clean the data (remove or ignore the -999 entries) before charting or averaging.",
+    q:[num("How many entries in Temperature Series 2 are -999?",b10[1].filter(v=>v===-999).length),num("After removing -999 values, what is the average of Temperature Series 1? (1 decimal place)",mean(b10[0])),
+       num("After cleaning, what is the highest value in Temperature Series 3?",Math.max(...ok(b10[2]))),num("After cleaning, what is the lowest value in Temperature Series 2?",Math.min(...ok(b10[1])))]}
   ];
-  return{sheets,qs};
+  const sr=(t,ds)=>ds.map((d,i)=>({title:`${t} ${i+1}`,series:[ln((t.split(": ")[1]||t)+" "+(i+1),d)]}));
+  const charts=[
+   {title:"Sheet 1: Landing log",series:[ln("Temperature",s1)]},
+   {title:"Sheet 2: Cable trouble",series:[ln("Temperature",s2)]},
+   {title:"Sheet 3: Twin probes",series:[ln("Series Q",s1),ln("Series R",s2)]},
+   {title:"Sheet 4: Racing pools",series:[ln("Sample X",sx),ln("Sample Y",sy)]},
+   ...sr("Sheet 5: Trial",t5),...sr("Sheet 6: Dataset",t6),...sr("Sheet 7: Dataset",t7),
+   {title:"Sheet 8 (optional): Rover path on the map",sq:1,fix:1,xl:"X (m)",yl:"Y (m)",series:[{n:"Border",x:brd[0],y:brd[1],c:"#6b7595",d:1},...ZN.map((z,i)=>({n:z[0],x:rect(z)[0],y:rect(z)[1],c:COL[1+i*2],d:1})),{n:"Rover path",x:rx,y:ry,c:COL[0],w:2.5}]},
+   ...b10.map((d,i)=>({title:`Sheet 10: Series ${i+1} (cleaned)`,series:[ln("Series "+(i+1),d.map(v=>v===-999?null:v),T10)]}))
+  ];
+  return{sheets,qs,charts};
 }
 function zip(cols){return cols[0].map((_,i)=>cols.map(c=>c[i]))}
 
 // ---------- UI helpers ----------
 const $=id=>document.getElementById(id);
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function tab(s){$('pS').classList.toggle('hide',!s);$('pT').classList.toggle('hide',s);$('tS').classList.toggle('on',s);$('tT').classList.toggle('on',!s)}
-$('tS').onclick=()=>tab(true);$('tT').onclick=()=>tab(false);
+function tab(n){['S','T','C'].forEach(k=>{$('p'+k).classList.toggle('hide',k!=n);$('t'+k).classList.toggle('on',k==n)})}
+['S','T','C'].forEach(k=>$('t'+k).onclick=()=>tab(k));
+function unlock(k,pw){$('u'+k).onclick=()=>{if($('pw'+k).value.trim().toLowerCase()===pw){$('g'+k).classList.add('hide');$('c'+k).classList.remove('hide')}else $('e'+k).textContent='Incorrect password.'};$('pw'+k).onkeydown=e=>{if(e.key=='Enter')$('u'+k).click()}}
+unlock('T',PW_TEACH);unlock('C',PW_VIEW);
 
 let M=null,KEY='';
 $('load').onclick=loadMission;$('key').onkeydown=e=>{if(e.key=='Enter')loadMission()};
@@ -199,7 +243,7 @@ function loadMission(){
 function qHTML(si,qi,q){
   const id=`q${si}_${qi}`;
   const inp=q.type=='num'?`<input id="${id}" type="number" step="any" inputmode="decimal">`:
-   `<select id="${id}"><option value="">Choose...</option>${q.opts.map(o=>`<option value="${o}">${o}: ${SIT[o][0]}</option>`).join('')}</select>`;
+   `<select id="${id}"><option value="">Choose...</option>${q.opts.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
   return `<div class="q" id="w${id}"><label for="${id}">${esc(q.label)}${q.opt?' <span class="mute">(optional)</span>':''}</label>${inp}<span class="res"></span></div>`;
 }
 function renderMission(){
@@ -253,12 +297,40 @@ $('pdf').onclick=()=>{if(!need())return;
     d.setFont('helvetica','normal');d.setFontSize(8);d.setTextColor(110);d.text('Enter this key at: '+url,x+.2,y+1.65,{maxWidth:cw-.4});
   });
   d.save('rsp-key-cards.pdf')};
+const ansHTML=m=>m.qs.map(s=>s.q.length?`<p><b>${s.title}</b><br>${s.q.map(q=>`${esc(q.label)}: <b>${q.ansLabel||q.ans}</b>`).join('<br>')}</p>`:'').join('');
+$('alist').onclick=()=>{if(!need())return;$('alout').innerHTML=roster.map(r=>`<details class="ch"><summary>${esc(r.n)} (${r.k})</summary>${ansHTML(build(r.k))}</details>`).join('')};
 $('alook').onclick=()=>{
   const k=norm($('akey').value);
   if(!valid(k)){$('aout').innerHTML='<p class="err">That key is not recognised.</p>';return}
   const m=build(k);
-  $('aout').innerHTML=m.qs.map(s=>`<p><b>${s.title}</b><br>${s.q.map(q=>`${esc(q.label)}: <b>${q.ans}</b>`).join('<br>')}</p>`).join('');
+  $('aout').innerHTML=ansHTML(m);
 };
+// ---------- Chart viewer ----------
+function ticks(a,b){const r=b-a||1,s0=r/5,p=10**Math.floor(Math.log10(s0)),f=s0/p,st=(f<1.5?1:f<3?2:f<7?5:10)*p,o=[];for(let v=Math.ceil(a/st)*st;v<=b+1e-9;v+=st)o.push(+v.toFixed(10));return o}
+function draw(cv,sp){
+  const W=cv.width=760,H=cv.height=sp.sq?640:340,c=cv.getContext('2d'),m={l:60,r:18,t:30,b:46};
+  const pts=sp.series.flatMap(s=>s.x.map((x,i)=>[x,s.y[i]])).filter(p=>p[1]!==null);
+  let xa=sp.fix?0:Math.min(...pts.map(p=>p[0])),xb=sp.fix?100:Math.max(...pts.map(p=>p[0])),ya=sp.fix?0:Math.min(...pts.map(p=>p[1])),yb=sp.fix?100:Math.max(...pts.map(p=>p[1]));
+  if(!sp.fix){const pd=(yb-ya||1)*.08;ya-=pd;yb+=pd}
+  const X=v=>m.l+(v-xa)/(xb-xa)*(W-m.l-m.r),Y=v=>H-m.b-(v-ya)/(yb-ya)*(H-m.t-m.b);
+  c.fillStyle='#0b1020';c.fillRect(0,0,W,H);c.font='12px sans-serif';c.strokeStyle='#2a3558';c.lineWidth=1;c.fillStyle='#9aa3c0';
+  ticks(xa,xb).forEach(v=>{c.beginPath();c.moveTo(X(v),m.t);c.lineTo(X(v),H-m.b);c.stroke();c.textAlign='center';c.fillText(v,X(v),H-m.b+16)});
+  ticks(ya,yb).forEach(v=>{c.beginPath();c.moveTo(m.l,Y(v));c.lineTo(W-m.r,Y(v));c.stroke();c.textAlign='right';c.fillText(+v.toFixed(4),m.l-6,Y(v)+4)});
+  c.textAlign='center';c.fillText(sp.xl||'Time (s)',(W+m.l)/2,H-6);
+  c.save();c.translate(14,(H-m.b)/2);c.rotate(-Math.PI/2);c.fillText(sp.yl||'Reading',0,0);c.restore();
+  sp.series.forEach((s,k)=>{
+    c.strokeStyle=s.c||COL[k%5];c.lineWidth=s.w||1.5;c.setLineDash(s.d?[6,4]:[]);c.beginPath();let pen=false;
+    s.x.forEach((x,i)=>{const y=s.y[i];if(y===null){pen=false;return}pen?c.lineTo(X(x),Y(y)):c.moveTo(X(x),Y(y));pen=true});c.stroke();
+    c.setLineDash([]);c.fillStyle=c.strokeStyle;c.fillRect(m.l+k*150,10,14,4);c.textAlign='left';c.fillText(s.n,m.l+k*150+20,16)});
+}
+let CH=[];
+$('cgo').onclick=()=>{
+  const k=norm($('ckey').value);if(!valid(k)){$('cerr').textContent='That key is not recognised.';return}
+  $('cerr').textContent='';CH=build(k).charts;
+  $('charts').innerHTML=CH.map(c=>`<details class="ch"><summary>${c.title}</summary><canvas></canvas></details>`).join('');
+  document.querySelectorAll('#charts details').forEach((d,i)=>d.addEventListener('toggle',()=>{if(d.open&&!d.dataset.done){d.dataset.done=1;draw(d.querySelector('canvas'),CH[i])}}));
+};
+$('ckey').onkeydown=e=>{if(e.key=='Enter')$('cgo').click()};
 </script>
 </body>
 </html>
